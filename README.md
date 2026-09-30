@@ -7,6 +7,7 @@
 - `src/battery_logistics/`：储能场站、调拨走廊、资产批次、容量申请、分配与处置情景；
 - `src/battery_assurance/`：电池资产、证据版本、评估协议、观测导入、排除复核、分析任务与准入决定；
 - `src/component_quality/`：电芯组件批次、响应测量、统计分析、账号权限和质量审批；
+- `src/battery_passport/`：数字产品护照——确定版本资产与四类证据（出厂组件、检测结论、维修记录、所有权流转）的候选组装、签发门禁、内容冻结、版本取代、吊销与逐项追溯；
 - `fixtures/`：离线验收使用的评估协议与结构化观测；
 - `tests/`：领域规则、错误边界、事务、权限、HTTP API 和命令行验收测试。
 
@@ -34,9 +35,10 @@ python3 -m compileall -q src tests
 PYTHONPATH=src python3 -m battery_logistics.acceptance --workspace .
 PYTHONPATH=src python3 -m battery_assurance.acceptance --workspace .
 PYTHONPATH=src python3 -m component_quality.acceptance
+PYTHONPATH=src python3 -m battery_passport.acceptance --workspace .
 ```
 
-三条命令会在临时 SQLite 数据库中完成资产调拨、状态评估和组件质量流程，不访问外部网络。
+上述命令会在临时 SQLite 数据库中完成资产调拨、状态评估、组件质量和数字产品护照流程，均不访问外部网络。数字产品护照验收演示：缺失/撤销证据阻断签发、相同材料重试返回原护照、异材复用业务编号冲突、新版本取代而历史冻结、吊销保留原因并使未完成下游引用失效，以及时点有效查询与逐项追溯。
 
 ## HTTP 服务
 
@@ -44,6 +46,18 @@ PYTHONPATH=src python3 -m component_quality.acceptance
 PYTHONPATH=src python3 -m battery_logistics.api --database battery-logistics.sqlite3 --host 127.0.0.1 --port 8080
 PYTHONPATH=src python3 -m battery_assurance.api --database battery-assurance.sqlite3 --host 127.0.0.1 --port 8081
 PYTHONPATH=src python3 -m component_quality.api --database component-quality.sqlite3 --host 127.0.0.1 --port 8082
+PYTHONPATH=src python3 -m battery_passport.api --database battery-passport.sqlite3 --host 127.0.0.1 --port 8083
 ```
+
+数字产品护照接口（角色经 `X-Actor-Id` 头识别）主要包括：
+
+- `POST /assets`、`POST /assets/{id}/revisions`：登记确定版本的资产档案；
+- `POST /evidence`、`POST /evidence/revoke`：登记版本化来源证据（`component`/`inspection`/`repair`/`ownership`）与撤销；
+- `POST /candidates`：仅以「记录编号 + 正整数版本 + SHA-256」组装候选包；
+- `POST /passports/issue`：证据门禁通过后签发；相同材料重试返回原护照，不同内容须以 `replaces_passport_id` 显式续版；
+- `POST /passports/{id}/revoke`：吊销并保留原因，同时使未完成下游引用失效；
+- `GET /assets/{id}/effective?at=…`：取某一时点有效的护照；
+- `GET /passports/{id}/trace`：逐项追溯声明来源、签署责任与新旧版本关系；
+- `GET /business/{business_no}/versions[/{version}]`、`POST /references`、`GET /audit`。
 
 服务提供 JSON 接口与健康检查。进程重启后可以继续读取 SQLite 中的业务状态和审计历史。
